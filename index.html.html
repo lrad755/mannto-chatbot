@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Välkommen till Manntos hjälpassistent!</title>
+<link href="https://fonts.googleapis.com/css2?family=Roboto&display=swap" rel="stylesheet">
+<style>
+body { font-family: 'Roboto', sans-serif; background: #fff; display: flex; justify-content: center; padding: 20px; color: #000; }
+.chat-container { width: 500px; background: #fff; border-radius: 20px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; border: 2px solid #000; }
+.chat-header { background: #fff; color: #000; padding: 18px; text-align: center; font-weight: bold; font-size: 1.3em; border-bottom: 2px solid #000; }
+.chat-messages { flex: 1; overflow-y: auto; padding: 20px; background: #fff; }
+.message { margin-bottom: 14px; opacity: 0; animation: fadeIn 0.3s forwards; display: flex; flex-direction: column; }
+.user { align-items: flex-end; }
+.ai { align-items: flex-start; }
+.message p { padding: 12px 18px; border-radius: 20px; max-width: 75%; word-wrap: break-word; line-height: 1.4; }
+.user p { background: #ff8c42; color: #fff; border-bottom-right-radius: 5px; }
+.ai p { background: #ff8c42; color: #fff; border-bottom-left-radius: 5px; }
+.timestamp { font-size: 0.7em; color: #000; margin-top: 4px; }
+.typing { font-style: italic; color: #666; margin-bottom: 10px; }
+.chat-input { border-top: 2px solid #000; padding: 12px; display: flex; flex-direction: column; background: #fff; }
+.chat-input-row { display: flex; margin-top: 6px; }
+.chat-input input { flex: 1; padding: 12px; border: 1px solid #000; border-radius: 12px; outline: none; margin-right: 6px; background: #fff; color: #000; font-size: 0.95em; }
+.send-btn { padding: 12px 18px; border: none; border-radius: 12px; background: #000; color: #fff; cursor: pointer; font-size: 0.95em; transition: 0.2s; }
+.send-btn:hover { background: #333; transform: scale(1.05); }
+.button-row { display: flex; justify-content: space-between; margin-bottom: 6px; flex-wrap: wrap; }
+.button-row button { flex: 1; margin: 3px; padding: 10px; border: none; border-radius: 12px; background: #000; color: #fff; cursor: pointer; font-size: 0.9em; display: flex; align-items: center; justify-content: center; transition: 0.2s; }
+.button-row button:hover { background: #333; transform: scale(1.05); }
+@keyframes fadeIn { to { opacity: 1; } }
+
+/* Kalenderbox */
+#calendarContainer { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #fff; border: 2px solid #000; padding: 10px; border-radius: 12px; display: none; z-index: 100; }
+#calendarHeader { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+#calendarDays { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.day { padding: 6px; text-align: center; border-radius: 6px; cursor: pointer; }
+.day:hover { background: #000; color: #fff; }
+.day.disabled { color: #ccc; cursor: not-allowed; }
+.day.selected { background: #000; color: #fff; font-weight: bold; }
+.ok-btn { margin-top: 8px; background: #000; color:#fff; padding:6px 12px; border:none; border-radius:6px; cursor:pointer; }
+</style>
+</head>
+<body>
+
+<div class="chat-container">
+  <div class="chat-header">Välkommen till Manntos hjälpassistent!</div>
+  <div class="chat-messages" id="chatMessages"></div>
+  <div class="chat-input">
+    <div class="button-row">
+      <button onclick="quickMessage('Öppettider')">🕒 Öppettider</button>
+      <button onclick="quickMessage('Meny')">📋 Meny</button>
+      <button onclick="quickMessage('Veganskt')">🌱 Veganskt</button>
+      <button onclick="startBooking()">📅 Boka bord</button>
+      <button onclick="startCancel()">❌ Avboka</button>
+    </div>
+    <div class="chat-input-row">
+      <input type="text" id="userInput" placeholder="Skriv ditt meddelande..." />
+      <button class="send-btn" onclick="sendMessage()">Skicka</button>
+    </div>
+  </div>
+</div>
+
+<div id="calendarContainer">
+  <div id="calendarHeader">
+    <button onclick="prevMonth()">&lt;</button>
+    <span id="calendarMonthYear"></span>
+    <button onclick="nextMonth()">&gt;</button>
+  </div>
+  <div id="calendarDays"></div>
+  <button class="ok-btn" onclick="confirmDate()">OK</button>
+</div>
+
+<script>
+const chatMessages = document.getElementById('chatMessages');
+const userInput = document.getElementById('userInput');
+const calendarContainer = document.getElementById('calendarContainer');
+const calendarMonthYear = document.getElementById('calendarMonthYear');
+const calendarDays = document.getElementById('calendarDays');
+
+let bookingState = { active:false, step:0, data:{} };
+let cancelState = false;
+let selectedDate = null;
+let currentMonth = new Date().getMonth();
+let currentYear = new Date().getFullYear();
+const today = new Date();
+const FORMSPREE_URL = 'https://formspree.io/f/mjgoyjlg';
+
+function addMessage(text,sender){
+  const msg=document.createElement('div');
+  msg.className=`message ${sender}`;
+  const timestamp=new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  msg.innerHTML=`<p>${text}<span class="timestamp">${timestamp}</span></p>`;
+  chatMessages.appendChild(msg);
+  chatMessages.scrollTop=chatMessages.scrollHeight;
+}
+function showAIMessage(text){
+  const typing = document.createElement('div'); typing.className='typing'; typing.textContent='AI skriver...';
+  chatMessages.appendChild(typing);
+  chatMessages.scrollTop = chatMessages.scrollHeight;
+  setTimeout(()=>{ typing.remove(); addMessage(text,'ai'); }, 600+Math.random()*600);
+}
+function quickMessage(text){ addMessage(text,'user'); setTimeout(()=>showAIMessage(getAIResponse(text)),300); }
+function sendMessage(){ 
+  const message=userInput.value.trim(); 
+  if(!message) return;
+  addMessage(message,'user'); 
+  showAIMessage(getAIResponse(message)); 
+  userInput.value=''; userInput.focus();
+}
+
+// AI-respons & meny med kolumnformat
+function getAIResponse(message){
+  message=message.toLowerCase();
+  if(cancelState) return handleCancel(message);
+  if(bookingState.active) return handleBooking(message);
+  if(message.includes('öppettider')) return 'Hej! 😊 Vi har öppet Mån–Sön 11:00–20:00.';
+  if(message.includes('meny')) return `
+<b>🍽️ Manntos meny:</b><br><br>
+
+<b>🥟 Förrätter:</b><br>
+Mantu (5 st) - 69 kr<br>
+Ashak (5 st) - 59 kr<br>
+Sambosa (vegetariska piroger, serveras med vitsås och chakni) - 79 kr<br><br>
+
+<b>🍚 Risrätter:</b><br>
+Qabeli: Afghanskt kryddat ris med morötter och russin, serveras med lammlägg - 169 kr<br>
+Beryani: Kryddig risrätt med smakrika örter, serveras med drumstick - 169 kr<br>
+Morgh Palaw: Ris med kyckling tillagad i färska tomater och löksås - 169 kr<br>
+Karayi Morgh: Afghansk kycklinggryta, serveras med bröd - 179 kr<br>
+Karayi Gosht: Afghansk lammgryta, serveras med bröd - 219 kr<br><br>
+
+<b>⭐ Manntos favoriter:</b><br>
+Chapli Kababe - 179 kr<br>
+Mantu - 169 kr<br>
+Ashak - 159 kr<br>
+Dastarkhan Afghani (minst 4 pers, minst 8 rätter) - 399 kr/person<br>
+Bolani (purjolök) - 79 kr<br>
+Bolani (potatis) - 79 kr<br>
+Shami Kabab - 159 kr<br>
+Morgh Kabab - 159 kr<br>
+Tikka Kabab - 199 kr<br>
+Kababe Mix - 239 kr
+`;
+  return 'Bra fråga! Jag skickar detta till personalen så återkommer de snart 😊';
+}
+
+// Bokning
+function startBooking(){
+  bookingState.active=true; bookingState.step=1; bookingState.data={};
+  addMessage('📅 Boka bord','user');
+  showAIMessage('Hur många personer ska boka bord?');
+  showBookingOptions('people');
+}
+function startCancel(){
+  cancelState=true; bookingState.active=false; bookingState.step=0; bookingState.data={};
+  addMessage('❌ Avboka bokning','user');
+  showAIMessage('Ange namn och datum för bokningen du vill avboka:');
+}
+function showBookingOptions(type){
+  removeBookingButtons();
+  const container=document.querySelector('.chat-input');
+  const row=document.createElement('div'); row.className='button-row';
+  if(type==='people'){ for(let i=1;i<=10;i++){ const b=document.createElement('button'); b.textContent=i; b.onclick=()=>addBookingChoice(i); row.appendChild(b); } }
+  if(type==='datum'){ showCalendar(); return; }
+  if(type==='tid'){ ['11:00','12:00','13:00','14:00','15:00','16:00','17:00','18:00','19:00','20:00'].forEach(t=>{ const b=document.createElement('button'); b.textContent=t; b.onclick=()=>addBookingChoice(t); row.appendChild(b); }); }
+  container.appendChild(row);
+}
+function removeBookingButtons(){ document.querySelectorAll('.chat-input .button-row').forEach((r,i)=>{ if(i>0) r.remove(); }); }
+function addBookingChoice(choice){ addMessage(choice,'user'); showAIMessage(handleBooking(choice)); }
+function handleBooking(message){
+  switch(bookingState.step){
+    case 1: bookingState.data.people=message; bookingState.step++; showBookingOptions('datum'); return 'Vilket datum vill ni boka?';
+    case 2: bookingState.data.date=message; bookingState.step++; showBookingOptions('tid'); return 'Vilken tid vill ni boka?';
+    case 3: bookingState.data.time=message; bookingState.step++; return 'Vad heter bokningen?';
+    case 4: bookingState.data.name=message; bookingState.step++; return 'Telefonnummer, tack?';
+    case 5: bookingState.data.phone=message; bookingState.step++; return 'E-postadress för bekräftelse?';
+    case 6: bookingState.data.email=message; bookingState.active=false; bookingState.step=0; removeBookingButtons(); sendBookingEmail(bookingState.data);
+      return `Skickar bokningen...`;
+  }
+}
+function handleCancel(message){ cancelState=false; fetch(FORMSPREE_URL, { method:'POST', headers:{'Content-Type':'application/json','Accept':'application/json'}, body:JSON.stringify({ "_subject":"Avbokning","details":message }) }); return `Avbokningsförfrågan mottagen: "${message}". Restaurangen kommer att bekräfta avbokningen via e-post.`; }
+
+// Formspree med live-bekräftelse
+function sendBookingEmail(data){
+  fetch(FORMSPREE_URL,{
+    method:'POST',
+    headers:{'Content-Type':'application/json','Accept':'application/json'},
+    body:JSON.stringify({
+      "name":data.name,
+      "people":data.people,
+      "date":data.date,
+      "time":data.time,
+      "phone":data.phone,
+      "email":data.email,
+      "_subject":`Ny bokning från ${data.name}`
+    })
+  })
+  .then(res=>{
+    if(res.ok){
+      showAIMessage(`✅ Bokningen är bekräftad! Du kommer också få en e-postbekräftelse.`);
+    } else {
+      showAIMessage(`⚠️ Bokningen kunde inte skickas just nu. Restaurangen kontaktar dig snarast.`);
+    }
+  })
+  .catch(err=>{
+    showAIMessage(`⚠️ Bokningen kunde inte skickas just nu. Restaurangen kontaktar dig snarast.`);
+  });
+}
+
+// Kalender
+function showCalendar(){ calendarContainer.style.display='block'; selectedDate=null; currentMonth=new Date().getMonth(); currentYear=new Date().getFullYear(); renderCalendar(); }
+function renderCalendar(){
+  calendarMonthYear.textContent = `${currentYear}-${currentMonth+1}`;
+  calendarDays.innerHTML='';
+  const firstDay=new Date(currentYear,currentMonth,1).getDay();
+  const daysInMonth=new Date(currentYear,currentMonth+1,0).getDate();
+  for(let i=0;i<firstDay;i++){ const empty=document.createElement('div'); calendarDays.appendChild(empty); }
+  for(let d=1;d<=daysInMonth;d++){
+    const day = document.createElement('div'); day.className='day';
+    const dateObj=new Date(currentYear,currentMonth,d);
+    if(dateObj<today) day.classList.add('disabled');
+    day.textContent=d;
+    day.onclick=()=>{ if(day.classList.contains('disabled')) return; document.querySelectorAll('.day').forEach(x=>x.classList.remove('selected')); day.classList.add('selected'); selectedDate=dateObj.toISOString().split('T')[0]; };
+    calendarDays.appendChild(day);
+  }
+}
+function prevMonth(){ if(currentMonth===0){ currentMonth=11; currentYear--; } else currentMonth--; renderCalendar(); }
+function nextMonth(){ if(currentMonth===11){ currentMonth=0; currentYear++; } else currentMonth++; renderCalendar(); }
+function confirmDate(){ if(selectedDate){ addBookingChoice(selectedDate); calendarContainer.style.display='none'; } }
+</script>
+</body>
+</html>
+
+
+
+
